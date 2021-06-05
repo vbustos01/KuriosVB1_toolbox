@@ -1,29 +1,50 @@
-clear all
+% clear all
 % construccion del objeto
-a = Kurios();
+filt = Kurios();
 
 %% metodos
 % mostrar las funciones del fabricante
 % a.showLib
 
-% cambiar ancho de banda
+%% cambiar ancho de banda
 % 1 = BLACK mode
 % 2 = WIDE mode
 % 4 = MEDIUM mode
 % 8 = NARROW mode
-a.setBandwidth(2);
+filt.setBwMode(2);
 
-% obtener la temperatura del dispositivo
-T = a.getTemperature();
+%% cambiar longitud de onda
+filt.setWavelength(500);
 
-% forzar el trigger
-a.forceTrigger();
+%% perform sequence
+seqmode = 4;
+time_step = 2;
+in_wavelength = 430;
+wavestep = 20;
 
-%% llamar funcion x con varios argumentos
-% la funcion imprime todos los argumentos
-% ademas utiliza el primer argumento dentro de dec2bin()
-% callFunction('funcionX', 8,2,'helloWorld')
+for i = in_wavelength:wavestep:730
+    filt.setWavelength(i);
+    pause(time_step);
+end
+
+%% metdos get
+T = filt.getTemperature();
+bwmode = filt.getBwMode();
+[bw4seq, ts4seq, wavelength4seq] = filt.getDefaultSequenceConfig();
+id = filt.getId();
+[spec, bwAvailable] = filt.getOpticalHeadType();
+ouptutMode = filt.getOutputMode();
+seqL = filt.getSequenceLength();
+%[a b c] = filt.getSequenceStepData();
+[lim_down, lim_up] = filt.getSpecification();
+status = filt.getStatus();
+T = filt.getTemperature();
+triggerMode = filt.getTriggerMode();
+wavelength = filt.getWavelength();
+seq = filt.getSequence();
+%% actualizar el objeto
+filt.getAll()
 
 %% delete object
 % se destruye el objeto, la conexion y se libera la memoria
-delete(a);
+delete(filt);
