@@ -1,22 +1,54 @@
-classdef Kurios
+classdef Kurios < handle
 %--------------------------------------------------------------------------
 % Syntax:       Kurios();
 %
 % Inputs:       none
 %               
-% Outputs:      filt es un objeto con los siguientes metodos publicos:
-%               
-%                 filt.bwMode();              % Cambiar la longitud de onda
-%                 filt.showLib();                   % Mostrar las funciones de la libreria
-%             T = filt.getTemperature(FENstr);      % Obtener la temperatura del filtro
-%               
+% Outputs:      
+%           filt es un objeto creado a partir de la clase Kurios() con los siguientes metodos publicos:
+%           confirm = filt.checkLink()
+%           KURIOS GET
+%                   filt.getSequence
+%                   filt.getBwMode
+%                   filt.getDefaultSequenceConfig
+%                   filt.getId
+%                   filt.getOpticalHeadType
+%                   filt.getOutputMode
+%                   filt.getSequenceLength
+%                   filt.getSequenceStepData
+%                   filt.getSpecification
+%                   filt.getStatus
+%                   filt.getTemperature
+%                   filt.getTriggerMode
+%                   filt.getWavelength
+%--------------------------------------------------------------------------
+%           KURIOS SET
+%                   filt.setBwMode
+%                   filt.setDefaultBw
+%                   filt.setDefaultTs
+%                   filt.setDefaultWavelength
+%                   filt.deleteSequenceStep
+%                   filt.insertSequenceStep
+%                   filt.forceTrigger
+%                   filt.setOutputMode
+%                   filt.sequenceStepData
+%                   filt.triggerMode
+%                   filt.setWavelength
+%--------------------------------------------------------------------------
+%           OTRAS FUNCIONES
+%                   filt.updateInfo()
+%                   filt.showLib()
+
 % Note:         Esta libreria fue programada para el filtro ajustable
 %               Kuri        os VB1 by thorlabs, si se desea utilizar con otro
-%               modelo se deben realizar las modificaciones respectivas
+%               modelo se deben realizar las modificaciones respectivas.
 %               
 %               La libreria permite la realizacion de Secuencias, las cuales consisten
 %               en barridos de longitud de onda a cierto intervalo de tiempo y con
 %               un ajuste de ancho de banda predeterminado
+%               
+%               si desea ayuda con un metodo utilice el comando help:
+%                   help filt.setDefaultBw()
 %               
 % Author:       Victor M. Bustos
 %               v.bustos01@ufromail.cl
@@ -29,24 +61,22 @@ classdef Kurios
         hfile
         isOperative
         deviceHandle
-        % del filtro
-        sequence
-        bwMode
-        % for sequence
-        bw4sequence 
-        ts4sequence 
-        wavelength4Sequence
+        % intrinsecos
         id
-        spectrum
+        limits
         bwAvailable
-        outputMode
-        sequenceLength
-        sequenceStepData
-        specification
-        status
+        spectrum
+        % estado del filtro
         temperature
-        triggerMode
+        status
+        % config
+        bwMode
         wavelength
+        triggerMode
+        outputMode
+        % sequence
+        sequence
+        sequenceLength
     end
 
     methods
@@ -71,8 +101,12 @@ classdef Kurios
             end
             serialNo = char(ports(1,1));
             obj.deviceHandle = calllib(obj.libname,'common_Open',serialNo,115200,3);
-            obj.isOperative = true;
-            clear('pbuffer')
+            obj.isOperative =   true;
+            list = libfunctions(obj.libname);
+            obj.id = obj.getId();
+            [obj.spectrum, obj.bwAvailable] = obj.getOpticalHeadType();
+            [aux1,aux2]=obj.getLimits()
+            obj.limits=[aux1,aux2]
         end
 
         function confirm = checkLink()
@@ -85,47 +119,69 @@ classdef Kurios
             pbuffer = libpointer('cstring',char(zeros(1, 255)));
             check = calllib(obj.libname,'common_IsOpen',pbuffer);
             confirm = pbuffer.Value;
+            if confirm == 1
+                obj.isOperative = true;
+            else
+                obj.isOperative = false;
+            end 
+        end
+
+        function fastCheck(obj,check)
+
         end
 
         %% KURIOS GET
         function sequence = getSequence(obj)
-            % getSequence - obtener la data de la secuencia completa
+            % getSequence - obtener la lista de elementos de la secuencia
             %
-            % Syntax: seqData = getSequence(input)
+            % Syntax: seqData = filt.getSequence(input)
             %
-            % Long description
-            pbuffer = libpointer('uint8Ptr',uint8(zeros(1, 8)));
+            % con este metodo es posible obtener una lista de todos los
+            % elementos que hayan sido agregados a la secuencia, cuando el
+            % filtro se encuentra en modo secuencia realizara uno por uno
+            % los modos configurados en esta lista.
+            obj.getSequenceLength(); % se refresca el largo actual de la secuencia
+            pbuffer = libpointer('uint8Ptr',uint8(zeros(1, obj.sequenceLength+10)));
             check = calllib(obj.libname,'kurios_Get_AllSequenceData',obj.deviceHandle,pbuffer);
             if(check~=0)
                 sequence = NaN;
                 error('fallo al obtener la secuencia')
             end
             sequence = char(pbuffer.Value);
-            clear('pbuffer')
+            % obj update
+            obj.sequence = sequence;
         end
 
         function bwMode = getBwMode(obj)
             %getBwMode - Obtener el modo de ancho de banda
             %
-            % Syntax: bwMode = getBwMode()
+            % Syntax: bwMode = filt.getBwMode()
             %
-            % Long description
+            % la funcion devolvera un numero segun el modo:
+            % 1 = modo negro
+            % 2 = modo ancho
+            % 4 = modo mediano
+            % 8 = modo angosto
             pbuffer = libpointer('int32Ptr',int32(NaN));
             check = calllib(obj.libname,'kurios_Get_BandwidthMode',obj.deviceHandle,pbuffer);
             if(check~=0)
                 bwMode = NaN;
                 error('fallo al obtener el ancho de banda')
             end
-            bwMode = pbuffer.Value;
-            clear('pbuffer')
+            modes = ["BLACK", "WIDE", "MEDIUM", "NARROW"];
+            bwMode = modes(log2(pbuffer.Value)+1);
+            % obj update
+            obj.bwMode=bwMode;
         end
 
         function [bw, ts, wavelength] = getDefaultSequenceConfig(obj)
             %getDefaultSequenceConfig - obtener la configuracion predeterminada para realizar una secuencia
             %
-            % Syntax: [bw, ts, wavelength] = getDefaultSequenceConfig(input)
+            % Syntax: [bw, ts, wavelength] = filt.getDefaultSequenceConfig(input)
             %
-            % Long description
+            % esta funcion devuelve la configuracion por default de los elementos de la lista de secuencia
+            % devuelve el ancho de banda por defecto (bw), el intervalo de tiempo (ts) y la longitud
+            % de onda por defecto (wavelength).
             pbuffer1 = libpointer('int32Ptr',int32(NaN));
             pbuffer2 = libpointer('int32Ptr',int32(NaN));
             pbuffer3 = libpointer('int32Ptr',int32(NaN));
@@ -147,9 +203,6 @@ classdef Kurios
             bw = char(pbuffer1.Value);
             ts = pbuffer2.Value;
             wavelength = pbuffer3.Value;
-            clear('pbuffer1')
-            clear('pbuffer2')
-            clear('pbuffer3')
         end
 
         function id = getId(obj)
@@ -159,40 +212,62 @@ classdef Kurios
             %
             % La funcion permite obtener el numero de modelo, la version de hardware
             % y la version de firmware del dispositivo.
-            pbuffer = libpointer('uint8Ptr',uint8(zeros(1, 53)));
+            pbuffer = libpointer('uint8Ptr',uint8(zeros(1, 128)));
             check = calllib(obj.libname,'kurios_Get_ID',obj.deviceHandle,pbuffer);
             if(check~=0)
                 id = NaN;
                 error('fallo al obtener la ID')
             end
             id = char(pbuffer.Value);
-            clear('pbuffer')
         end
 
         function [spectrum, bwModeAvailable] = getOpticalHeadType(obj)
             %GetOpticalHeadType - Description
             %
-            % Syntax: opticalHeadType = GetOpticalHeadType()
+            % Syntax: opticalHeadType = filt.getOpticalHeadType()
             %
-            % Long description
-            pbuffer1 = libpointer('uint8Ptr',uint8(zeros(1,8)));
-            pbuffer2 = libpointer('uint8Ptr',uint8(zeros(1,8)));
+            % Esta funcion devuelve el tipo de espectro que posee el filtro, puede
+            % ser de tipo VIS o NIR, tambien devuelve los modos de ancho de banda
+            % disponibles en el filtro.
+            pbuffer1 = libpointer('uint8Ptr',uint8(NaN));
+            pbuffer2 = libpointer('uint8Ptr',uint8(NaN));
             check = calllib(obj.libname, 'kurios_Get_OpticalHeadType', obj.deviceHandle, pbuffer1, pbuffer2);
             if(check~=0)
                 opticalHeadType = NaN;
                 error('fallo al obtener el tipo de cabezal optico')
             end
-            spectrum = pbuffer1.Value;
-            bwModeAvailable = pbuffer2.Value;
-            clear('pbuffer')
+            if pbuffer1.Value==1
+                spectrum='NIR';
+            else
+                spectrum='VIS';
+            end
+            aux = dec2bin(pbuffer2.Value);modes = ["BLACK", "WIDE", "MEDIUM", "NARROW"];
+            if length(aux)==1
+                aux=['000',aux];
+            elseif length(aux)==2
+                aux = ['00',aux];
+            elseif length(aux)==3
+                aux = ['0',aux];
+            end
+            count=1;bwModeAvailable=[];
+            for i=aux
+                if strcmp(i,'1')
+                    bwModeAvailable=[bwModeAvailable, modes(count)];
+                end
+                count=count+1;
+            end            
         end
 
         function outputMode = getOutputMode(obj)
             %getOutputMode - obtener el modo de salida del filtro
             %
-            % Syntax: outputMode = getOutputMode()
+            % Syntax: outputMode = filt.getOutputMode()
             %
-            % Long description
+            % 1 = modo manual
+            % 2 = modo secuencial con trigger interno
+            % 3 = modo secuencial con trigger externo
+            % 4 = modo secuencial con trigger interno
+            % 5 = modo secuencial con trigger externo
             pbuffer = libpointer('int32Ptr',int32(NaN));
             check = calllib(obj.libname,'kurios_Get_OutputMode',obj.deviceHandle,pbuffer);
             if(check~=0)
@@ -200,61 +275,62 @@ classdef Kurios
                 error('fallo al obtener el modo de salida')
             end
             outputMode = pbuffer.Value;
-            clear('pbuffer')
+            % obj update
+            obj.ouptutMode = outputMode;
         end
 
         function sequenceLength = getSequenceLength(obj)
-            %getSequenceLength - Description
+            %getSequenceLength - devuelve el numero de elementos en la
+            %lista de secuencia
             %
-            % Syntax: sequenceLength = getSequenceLength(input)
+            % Syntax: sequenceLength = filt.getSequenceLength()
             %
-            % Long description
-            pbuffer = libpointer('int32Ptr',int32(zeros(1,16)));
+            % esta funcion devuelve el largo actual de la secuencia
+            pbuffer = libpointer('int32Ptr',int32(NaN));
             check = calllib(obj.libname,'kurios_Get_SequenceLength',obj.deviceHandle,pbuffer);
             if(check~=0)
                 sequenceLength = NaN;
                 error('fallo al obtener el largo de la secuencia')
             end
             sequenceLength = pbuffer.Value;
-            clear('pbuffer')
+            obj.sequenceLength = sequenceLength;
         end
 
-        function [a b c] = getSequenceStepData(obj)
-            %getSequenceStepData - Description
+        function [wavelength, ts, bwmode] = getSequenceStepData(obj,n)
+            %getSequenceStepData - obtener la configuracion del n-esimo
+            %elemento de  la secuencia.
             %
-            % Syntax: [a b c] = getSequenceStepData(input)
+            % Syntax: [wavelength ts bwmode] = filt.getSequenceStepData(input)
             %
-            % Long description
-            pbuffer1 = libpointer('int32Ptr',int32(zeros(1,64)));
-            pbuffer2 = libpointer('int32Ptr',int32(zeros(1,64)));
-            pbuffer3 = libpointer('int32Ptr',int32(zeros(1,64)));
-            check = calllib(obj.libname, 'kurios_Get_SequenceStepData', int32(0), pbuffer1, pbuffer2, pbuffer3);
+            % con esa funcion es posible obtener los parametros de un determinado elemento de la secuencia
+            pbuffer1 = libpointer('int32Ptr',int32(NaN));
+            pbuffer2 = libpointer('int32Ptr',int32(NaN));
+            pbuffer3 = libpointer('int32Ptr',int32(NaN));
+            check = calllib(obj.libname,'kurios_Get_SequenceStepData',obj.deviceHandle,n,pbuffer1,pbuffer2,pbuffer3);
             if(check~=0)
-                opticalHeadType = NaN;
+                wavelength=NaN;ts=NaN;bwmode=NaN;
                 error('fallo al obtener el tiempo de muestreo del trigger')
             end
-            a = pbuffer1.Value;
-            b = pbuffer2.Value;
-            c = pbuffer3.Value;
-            clear('pbuffer')
+            wavelength = pbuffer1.Value;
+            ts = pbuffer2.Value;
+            bwmode = pbuffer3.Value;
         end
 
-        function [lim_down, lim_up] = getSpecification(obj)
+        function [lim_down, lim_up] = getLimits(obj)
             %getSpecification - obtener el rango de longitud de onda
             %
-            % Syntax: [lim_down, lim_up] = filt.getSpecification()
+            % Syntax: [lim_down, lim_up] = filt.getLimits()
             %
-            % Long description
+            % esta funcion retorna los limites de ancho de banda configurables en el filtro
             pbuffer1 = libpointer('int32Ptr',int32(NaN));
             pbuffer2 = libpointer('int32Ptr',int32(NaN));
             check = calllib(obj.libname, 'kurios_Get_Specification', obj.deviceHandle, pbuffer1, pbuffer2);
             if(check~=0)
-                [lim_down, lim_down] = NaN;
+                lim_down=NaN;lim_up=NaN;
                 error('fallo al obtener el rango de longitud de onda del filtro')
             end
-            lim_down = pbuffer1.Value;
-            lim_up = pbuffer2.Value;
-            clear('pbuffer')
+            lim_down = double(pbuffer1.Value);
+            lim_up = double(pbuffer2.Value);
         end
 
         function status = getStatus(obj)
@@ -262,7 +338,10 @@ classdef Kurios
             %
             % Syntax: status = filt.getStatus()
             %
-            % Long description
+            % esta funcion permite obtener el estado actual del filtro, pueden ser tres opciones:
+            % 'initialization'  :   el filtro se encuentra inicializando
+            % 'warming up'      :   el filtro esta alcanzando su temperatura de operacion
+            % 'ready'           :   se ha alcanzado la temperatura de operacion y ya se puede utilizar el filtro
             pbuffer = libpointer('int32Ptr',int32(NaN));
             check = calllib(obj.libname,'kurios_Get_Status',obj.deviceHandle,pbuffer);
             if(check~=0)
@@ -270,7 +349,14 @@ classdef Kurios
                 error('fallo al obtener el estado del filtro')
             end
             status = pbuffer.Value;
-            clear('pbuffer')
+            switch status
+            case status==0
+                obj.status = 'initialization';
+            case status==1
+                obj.status = 'warming up';
+            case status==2
+                obj.status = 'ready';
+            end
         end
 
         function T = getTemperature(obj)
@@ -278,7 +364,7 @@ classdef Kurios
             %
             % Syntax: T = filt.getTemperature()
             %
-            % Long description
+            % esta funcion permite obtener la temperatura actual del filtro.
             pbuffer = libpointer('doublePtr',double(0));
             check = calllib(obj.libname,'kurios_Get_Temperature',obj.deviceHandle,pbuffer);
             if(check~=0)
@@ -286,7 +372,7 @@ classdef Kurios
                 error('fallo al obtener la temperatura')
             end
             T = pbuffer.Value;
-            clear('pbuffer')
+            obj.temperature = T;
         end
 
         function triggerMode = getTriggerMode(obj)
@@ -304,15 +390,17 @@ classdef Kurios
                 error('fallo al obtener el modo de trigger')
             end
             triggerMode = pbuffer.Value;
-            clear('pbuffer')
+            obj.triggerMode = triggerMode;
         end
 
         function wavelength = getWavelength(obj)
-            %getWavelength - Description
+            %getWavelength - obtener la longitud de onda central del filtro
             %
             % Syntax: wavelength = filt.getWavelength()
             %
-            % Long description
+            % esta funcion permite obtener la longitud de onda central del filtro, es
+            % decir, la componente del espectro que esta dejando pasar el filtro segun
+            % el ancho de banda configurado.
             pbuffer = libpointer('int32Ptr',int32(NaN));
             check = calllib(obj.libname,'kurios_Get_Wavelength',obj.deviceHandle,pbuffer);
             if(check~=0)
@@ -320,7 +408,7 @@ classdef Kurios
                 error('fallo al obtener la longitud de onda del filtro')
             end
             wavelength = pbuffer.Value;
-            clear('pbuffer')
+            obj.wavelength = wavelength;
         end
 
         %% KURIOS SET
@@ -331,71 +419,81 @@ classdef Kurios
             %
             % esta funcion es para modificar el ancho de banda del filtro,
             % se cuenta con los siguientes modos:
-            % 1 = BLACK mode
-            % 2 = WIDE mode
-            % 4 = MEDIUM mode
-            % 8 = NARROW mode
+            % 1 = modo negro
+            % 2 = modo ancho
+            % 4 = modo mediano
+            % 8 = modo angosto
             check = calllib(obj.libname,'kurios_Set_BandwidthMode',obj.deviceHandle,mode);
             pause(1);
             if(check~=0)
                 error('fallo al cambiar el ancho de banda')
             end
+            obj.bwMode = mode;
         end
 
         function setDefaultBw(obj,bwmode)
             %setDefaultBw - Establecer el modo de ancho de banda predeterminado para todos los elementos de la secuencia.
             %
-            % Syntax: setDefaultBw(bwmode)
+            % Syntax: filt.setDefaultBw(bwmode)
             %
-            % Long description
+            % 1 = modo negro
+            % 2 = modo ancho
+            % 4 = modo mediano
+            % 8 = modo angosto
             check = calllib(obj.libname,'kurios_Set_DefaultBandwidthForSequence',obj.deviceHandle,bwmode);
             if(check~=0)
                 error('fallo al cambiar el ancho de banda por defecto en la secuencia')
             end
+            obj.getSequence();
         end
+        
 
         function setDefaultTs(obj,ts)
             %setDefaultTs - Establecer el intervalo de tiempo predeterminado para todos los elementos de la secuencia.
             %
-            % Syntax: setDefaultTs(ts)
+            % Syntax: filt.setDefaultTs(ts)
             %
-            % Long description
+            % Cambia el tiempo que tomara cada uno de los elementos de la
+            % secuencia
+            % ts: tiempo en milisegundos
             check = calllib(obj.libname,'kurios_Set_DefaultTimeIntervalForSequence',obj.deviceHandle,ts);
             if(check~=0)
                 error('fallo al cambiar el intervalo de tiempo por defecto en la secuencia')
             end
+            obj.getSequence();
         end
 
         function setDefaultWavelength(obj,wavelength)
             %setDefaultWavelength - Establecer la longitud de onda predeterminada para todos los elementos de la secuencia.
             %
-            % Syntax: setDefaultWavelength(wavelength)
+            % Syntax: filt.setDefaultWavelength(wavelength)
             %
-            % Long description
             check = calllib(obj.libname,'kurios_Set_DefaultWavelengthForSequence',obj.deviceHandle,wavelength);
             if(check~=0)
                 error('fallo al cambiar la longitud de onda por defecto en la secuencia')
             end
+            obj.getSequence();
         end
 
         function deleteSequenceStep(obj,n)
-        %deleteSequenceStep - elimina la n-esima entrada en la lista de secuencias.
-        %
-        % Syntax: deleteSequenceStep(n)
-        %
-        % esta funcion sirve para eliminar cualquier elemento que se haya agregado a la secuencia
-        % para borrar la secuencia completa se utiliza n=0
-        % n: numero entre 1 y 1024
-        check = calllib(obj.libname,'kurios_Set_DeleteSequenceStep',obj.deviceHandle,n);
-        if(check~=0)
-            error('fallo al eliminar elemento en la secuencia')
-        end
+            %deleteSequenceStep - elimina la n-esima entrada en la lista de secuencias.
+            %
+            % Syntax: filt.deleteSequenceStep(n)
+            %
+            % esta funcion sirve para eliminar cualquier elemento que se haya agregado a la secuencia
+            % para borrar la secuencia completa se utiliza n=0
+            % n: numero entre 1 y 1024
+            check = calllib(obj.libname,'kurios_Set_DeleteSequenceStep',obj.deviceHandle,n);
+            if(check~=0)
+                error('fallo al eliminar elemento en la secuencia')
+            end
+            obj.getSequence();
         end
 
         function insertSequenceStep(obj,n,wavelength,ts,bwmode)
             % insertSequenceStep - Insertar una orden a la lista de secuencias en la n-esima posicion.
             %
-            % Syntax: insertSequenceStep()
+            % Syntax: filt.insertSequenceStep()
             %
             % cada una de las ordenes que ingresemos en la secuencia se ejecutara
             % de forma secuencial cuando el modo de salida del filtro sea el MODO SECUENCIA (sequence mode)
@@ -404,15 +502,19 @@ classdef Kurios
             if(check~=0)
                 error('fallo al agregar elemento en la secuencia')
             end
+            obj.getSequence();
         end
 
         function forceTrigger(obj)
-            % forceTrigger - Forzar el disparo
+            % forceTrigger - Forzar el trigger
             %
-            % Syntax: forceTrigger()
+            % Syntax: filt.forceTrigger()
             %
-            % Long description
-
+            % Esta funcion realiza un forzado del trigger, es decir, si se
+            % encuentra en el modo secuencial o el modo analogo se
+            % efectuara un pulso de disparo que pasara al siguiente
+            % elemento de la secuencia sin esperar el tiempo
+            % predeterminado.
             check = calllib(obj.libname,'kurios_Set_ForceTrigger',obj.deviceHandle);
             if(check~=0)
                 error('fallo al forzar el trigger')
@@ -420,23 +522,28 @@ classdef Kurios
         end
 
         function setOutputMode(obj, mode)
+            % setOutputMode - Establecer el modo de salida del filtro
+            %
+            % Syntax: filt.setOutputMode()
+            %
             % esta funcion es para modificar el modo de funcionamiento del filtro
             % se cuenta con los siguientes modos:
-            % 1 = Manual mode
-            % 2 = Sequenced internal trigger mode
-            % 3 = Sequenced external trigger mode
-            % 4 = Analog signal internal trigger mode
-            % 5 = Analog signal external trigger mode
+            % 1 = modo manual
+            % 2 = modo secuencial con trigger interno
+            % 3 = modo secuencial con trigger externo
+            % 4 = modo secuencial con trigger interno
+            % 5 = modo secuencial con trigger externo
             check = calllib(obj.libname,'kurios_Set_OutputMode',obj.deviceHandle,mode);
             if(check~=0)
                 error('fallo al cambiar el modo de salida del filtro.')
             end      
+            obj.outputMode = mode;
         end
         
         function setSequenceStepData(obj,n,wavelength,ts,bwmode)
             %sequenceStepData - modifica los datos de un elemento de la secuencia en particular.
             %
-            % Syntax: sequenceStepData()
+            % Syntax: filt.setSequenceStepData(n,wavelength,ts,bwmode)
             %
             % esta funcion permite cambiar tanto la longitud de onda, el intervalo de tiempo y el modo
             % de ancho de banda de un elemento n-esimo de la secuencia
@@ -444,13 +551,14 @@ classdef Kurios
             check = calllib(obj.libname,'kurios_Set_SequenceStepData',obj.deviceHandle,n,wavelength,ts,bwmode);
             if(check~=0)
                 error('fallo al cambiar la configuracion del elemento en la secuencia.')
-            end          
+            end       
+            obj.getSequence();   
         end
 
         function setTriggerMode(obj, mode)
             %triggerMode - Description
             %
-            % Syntax: triggerMode(mode)
+            % Syntax: filt.setTriggerMode(mode)
             %
             % esta funcion sirve para modificar el modo de trigger del filtro,
             % se cuenta con los siguientes modos:
@@ -460,6 +568,7 @@ classdef Kurios
             if(check~=0)
                 error('fallo al cambiar el modo de trigger.')
             end
+            obj.triggerMode = mode;
         end
 
         function setWavelength(obj, wavelength)
@@ -477,46 +586,13 @@ classdef Kurios
             if(check~=0)
                 error('fallo al cambiar la longitud de onda')
             end
-        end
-
-
-        %% funciones propias
-        function list = showLib(obj)
-            % showLib - Mostrar las funciones de la libreria
-            %
-            % Syntax: showLib()
-            %
-            % Long description
-            % esta funcion se utiliza para mostrar todas las funciones
-            % disponibles en la libreria
-            list = libfunctions(obj.libname);
-        end
-
-        function obj = getAll(obj)
-            %getAll - obtener todos los parametros del objeto
-            %
-            % Syntax: filt.getAll()
-            %
-            % a traves de este metodo se actualizan los atributos del objeto filt
-            obj.sequence                =   obj.getSequence()
-            obj.bwMode                  =   obj.getBwMode()
-            [obj.bw4sequence obj.ts4sequence obj.wavelength4Sequence]   =   obj.getDefaultSequenceConfig()
-            obj.id                      =   obj.getId()
-            [obj.spectrum obj.bwAvailable]         =   obj.getOpticalHeadType()
-            obj.outputMode              =   obj.getOutputMode()
-            obj.sequenceLength          =   obj.getSequenceLength()
-            %obj.sequenceStepData        =   obj.getSequenceStepData()
-            obj.specification           =   obj.getSpecification()
-            obj.status                  =   obj.getStatus()
-            obj.temperature             =   obj.getTemperature()
-            obj.triggerMode             =   obj.getTriggerMode()
-            obj.wavelength              =   obj.getWavelength()
+            obj.wavelength = wavelength;
         end
 
         function delete(obj)
             % esta funcion se ejectuta cuando el objeto se elimina
             % para eliminar un objeto se utiliza el comando delete(objeto)
-            % en este caso cierra la conexion con el dispositivo y cierra la
+            % en este aux cierra la conexion con el dispositivo y cierra la
             % libreria
             if obj.deviceHandle>=0
                 bCloseSuccess = calllib(obj.libname,'common_Close',obj.deviceHandle);
