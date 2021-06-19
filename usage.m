@@ -1,11 +1,12 @@
 %% construccion del objeto:
+clear all
 filt = Kurios();
 
 % atributos intrinsecos
-filt.id
-filt.limits
-filt.bwAvailable
-filt.spectrum
+% filt.id
+% filt.limits
+% filt.bwAvailable
+% filt.spectrum
 
 %% KURIOS GET
 seq = filt.getSequence();
@@ -15,7 +16,7 @@ id = filt.getId();
 [spec, bwAvailable] = filt.getOpticalHeadType();
 ouptutMode = filt.getOutputMode();
 seqL = filt.getSequenceLength();
-[n_wavelength, n_ts, n_bwmode] = filt.getSequenceStepData(1);
+% [n_wavelength, n_ts, n_bwmode] = filt.getSequenceStepData(1);
 [lim_down, lim_up] = filt.getLimits();
 status = filt.getStatus();
 T = filt.getTemperature();
@@ -79,6 +80,8 @@ filt.setWavelength(550);
 filt.Wavelength
 
 %% TERMINAR CONEXION
-% se destruye el objeto, la conexion y se libera la memoria
-delete(filt);
+% se destruye el objeto, la conexion y se libera la memoria, se puede usar
+% ambos metodos:
+
+%delete(filt);
 clear all
