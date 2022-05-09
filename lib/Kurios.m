@@ -7,42 +7,40 @@ classdef Kurios < handle
 % Outputs:      
 %           filt es un objeto creado a partir de la clase Kurios() con los siguientes metodos publicos:
 %           KURIOS GET
-%                   filt.getSequence
-%                   filt.getBwMode
-%                   filt.getDefaultSequenceConfig
-%                   filt.getId
-%                   filt.getOpticalHeadType
-%                   filt.getOutputMode
-%                   filt.getSequenceLength
-%                   filt.getSequenceStepData
+%                   sequence                    =   filt.getSequence
+%                   modo                        =   filt.getBwMode
+%                   [wavelength time mode]      =   filt.getDefaultSequenceConfig
+%                   id                          =   filt.getId
+%                   [Spectrum, BW]              =   filt.getOpticalHeadType
+%                   outptuMode                  =   filt.getOutputMode
+%                   sequenceLength              =   filt.getSequenceLength
+%                   [wavelength time mode]      =   filt.getSequenceStepData
 %                   filt.getSpecification
-%                   filt.getStatus
-%                   filt.getTemperature
-%                   filt.getTriggerMode
-%                   filt.getWavelength
+%                   status                      =   filt.getStatus
+%                   temperature                 =   filt.getTemperature
+%                   triggerMode                 =   filt.getTriggerMode
+%                   wavelength                  =   filt.getWavelength
 %--------------------------------------------------------------------------
 %           KURIOS SET
-%                   filt.setBwMode
-%                   filt.setDefaultBw
-%                   filt.setDefaultTs
-%                   filt.setDefaultWavelength
-%                   filt.deleteSequenceStep
-%                   filt.insertSequenceStep
-%                   filt.forceTrigger
-%                   filt.setOutputMode
-%                   filt.sequenceStepData
-%                   filt.triggerMode
-%                   filt.setWavelength
+%                   filt.setBwMode(mode) modes: 1 BLACK;  2 WIDE; 4 MEDIUM; 8 NARROW;
+%                   filt.setDefaultBw(mode) same modes
+%                   filt.setDefaultTs(time) in miliseconds
+%                   filt.setDefaultWavelength(wavelength) in nanometers
+%                   filt.deleteSequenceStep(n) for the n-th element of sequence
+%                   filt.insertSequenceStep(n,wavelength,time,mode)
+%                   filt.forceTrigger()
+%                   filt.setOutputMode(mode)    modes:  manual = 1
+%                                                       seq    = 2(internal trigger) or 3(external)
+%                                                       analog = 4(int) or 5(ext)
+%                   filt.setSequenceStepData(n,wavelength,time,mode)
+%                   filt.triggerMode(mode) modes: 0 normal ---- 1 inverted
+%                   filt.setWavelength(wavelenght) in nanometers
 
 % Note:         Esta libreria fue programada para el filtro ajustable
-%               Kuri        os VB1 by thorlabs, si se desea utilizar con otro
-%               modelo se deben realizar las modificaciones respectivas.
+%               Kurios VB1 by thorlabs.
 %               
-%               La libreria permite la realizacion de Secuencias, las cuales consisten
-%               en barridos de longitud de onda a cierto intervalo de tiempo y con
-%               un ajuste de ancho de banda predeterminado
 %               
-%               si desea ayuda con un metodo utilice el comando help:
+%               si desea mas ayuda con un metodo utilice el comando help:
 %                   help filt.setDefaultBw()
 %               
 % Author:       Victor M. Bustos
@@ -79,12 +77,13 @@ classdef Kurios < handle
             % este metodo es el constructor (__init__), se utiliza
             % para relacionar el objeto Kurios, la libreria y el dispositivo
             % lista de funciones:   list = libfunctions(obj.libname);
+            %obj.libname = 'KURIOS_COMMAND_LIB_Win64';
             obj.libname = 'KURIOS_COMMAND_LIB_Win64';
             obj.hfile   = 'KURIOS_COMMAND_LIB.h';
             if libisloaded(obj.libname)
                 unloadlibrary(obj.libname);
             end
-            loadlibrary(strcat(obj.libname,'.dll'),obj.hfile);
+            loadlibrary(strcat(obj.libname,'.dll'),@kurioslibmfile);
             try
                 pbuffer = libpointer('voidPtr',uint8(zeros(1, 255)));
                 check = calllib(obj.libname,'common_List',pbuffer);
@@ -126,6 +125,7 @@ classdef Kurios < handle
             obj.getOutputMode;
             obj.getSequence;
         end
+            
         %% KURIOS GET
         function sequence = getSequence(obj)
             % getSequence - obtener la lista de elementos de la secuencia
@@ -149,7 +149,7 @@ classdef Kurios < handle
             %
             % Syntax: bwMode = filt.getBwMode()
             %
-            % la funcion devolvera un numero segun el modo:
+            % la funcion devuelve un numero segun el modo:
             % 1 = modo negro
             % 2 = modo ancho
             % 4 = modo mediano
@@ -424,11 +424,17 @@ classdef Kurios < handle
         function insertSequenceStep(obj,n,wavelength,ts,bwmode)
             % insertSequenceStep - Insertar una orden a la lista de secuencias en la n-esima posicion.
             %
-            % Syntax: filt.insertSequenceStep()
+            % Syntax: filt.insertSequenceStep(n,wavelength,ts,bwmode)
+            %
+            % Argumentos:
+            % n:            numero entre 1 y 1024
+            % wavelength:   longitud de onda en [nm]
+            % Ti:           intervalo de tiempo 
+            % bwmode:       modo de ancho de banda (1:)
             %
             % cada una de las ordenes que ingresemos en la secuencia se ejecutara
             % de forma secuencial cuando el modo de salida del filtro sea el MODO SECUENCIA (sequence mode)
-            % n: numero entre 1 y 1024
+            %
             check = calllib(obj.libname,'kurios_Set_InsertSequenceStep',obj.deviceHandle,n,wavelength,ts,bwmode);
             obj.fastCheck(check,'fallo al agregar elemento en la secuencia')
             % obj update
@@ -457,8 +463,8 @@ classdef Kurios < handle
             % 1 = modo manual
             % 2 = modo secuencial con trigger interno
             % 3 = modo secuencial con trigger externo
-            % 4 = modo secuencial con trigger interno
-            % 5 = modo secuencial con trigger externo
+            % 4 = modo analogo con trigger interno
+            % 5 = modo analogo con trigger externo
             check = calllib(obj.libname,'kurios_Set_OutputMode',obj.deviceHandle,mode);
             obj.fastCheck(check,'fallo al cambiar el modo de salida del filtro.')
             % obj update
@@ -498,7 +504,7 @@ classdef Kurios < handle
             %
             % esta funcion es para modificar la frecuencia central del filtro, este valor
             % debe pertenecer al intervalo [420,730] que es el rango del filtro
-            if (wavelength < 420)|(wavelength > 730)
+            if (wavelength < 420)||(wavelength > 730)
                 error('la longitud de onda ingresada no es valida, intente con un numero entre 430 y 720')
             end
             check = calllib(obj.libname,'kurios_Set_Wavelength',obj.deviceHandle,wavelength);
